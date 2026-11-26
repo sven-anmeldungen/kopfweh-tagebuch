@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kopfweh">
+<meta name="theme-color" content="#2b6cb0">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<title>Kopfweh-Tagebuch</title>
+<style>
+:root{--blau:#2b6cb0;--hell:#ebf4ff;--grau:#718096;--rand:#e2e8f0;--leicht:#9ae6b4;--mittel:#f6ad55;--stark:#fc8181}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:#f7fafc;color:#1a202c;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{background:var(--blau);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:18px;margin:0}
+header button{background:none;border:0;color:#fff;font-size:26px;padding:4px 12px}
+main{max-width:480px;margin:0 auto;padding:12px}
+.wochentage,.raster{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.wochentage div{text-align:center;font-size:12px;color:var(--grau);padding:4px 0}
+.tag{aspect-ratio:1;border:1px solid var(--rand);border-radius:10px;background:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;position:relative}
+.tag.leer{border:0;background:none}
+.tag.heute{border:2px solid var(--blau);font-weight:700}
+.tag.leicht{background:var(--leicht)}
+.tag.mittel{background:var(--mittel)}
+.tag.stark{background:var(--stark)}
+.tag .punkt{position:absolute;bottom:4px;width:6px;height:6px;border-radius:50%;background:#2d3748}
+.legende{display:flex;gap:12px;justify-content:center;font-size:12px;color:var(--grau);margin:10px 0}
+.legende span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;background:var(--c)}
+.leiste{display:flex;gap:8px;margin-top:12px}
+.knopf{flex:1;padding:12px;border:0;border-radius:10px;background:var(--blau);color:#fff;font-size:15px}
+.knopf.zweit{background:#fff;color:var(--blau);border:1px solid var(--blau)}
+#maske{position:fixed;inset:0;background:#f7fafc;overflow-y:auto;padding:12px;display:none;z-index:5}
+#maske.offen{display:block}
+.block{background:#fff;border:1px solid var(--rand);border-radius:12px;padding:12px;margin-bottom:10px}
+.block h3{margin:0 0 8px;font-size:14px;color:var(--grau);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:10px 14px;border:1px solid var(--rand);border-radius:999px;background:#fff;font-size:15px}
+.chip.an{background:var(--blau);color:#fff;border-color:var(--blau)}
+textarea{width:100%;border:1px solid var(--rand);border-radius:8px;padding:8px;font-size:15px;font-family:inherit}
+.wetter{font-size:14px;color:#2d3748}
+</style>
+</head>
+<body>
+<header><button id="zurueck" aria-label="Vorheriger Monat">&#8249;</button><h1 id="monatstitel"></h1><button id="vor" aria-label="Nächster Monat">&#8250;</button></header>
+<main>
+<div class="wochentage"><div>Mo</div><div>Di</div><div>Mi</div><div>Do</div><div>Fr</div><div>Sa</div><div>So</div></div>
+<div class="raster" id="raster"></div>
+<div class="legende"><span style="--c:var(--leicht)">leicht</span><span style="--c:var(--mittel)">mittel</span><span style="--c:var(--stark)">stark</span></div>
+<div class="leiste"><button class="knopf" id="heuteKnopf">Heute eintragen</button><button class="knopf zweit" id="exportKnopf">CSV-Export</button></div>
+</main>
+
+<div id="maske">
+<div class="block"><h3 id="maskeDatum"></h3>
+<div class="chips" id="kopfweh"></div></div>
+<div class="block" id="staerkeBlock"><h3>Stärke</h3><div class="chips" id="staerke"></div></div>
+<div class="block" id="effekteBlock"><h3>Weitere Beschwerden</h3><div class="chips" id="effekte"></div></div>
+<div class="block"><h3>Besonderes an diesem Tag</h3><div class="chips" id="ereignisse"></div></div>
+<div class="block"><h3>Wetter</h3><div class="wetter" id="wetterAnzeige">Wird beim Speichern abgerufen.</div>
+<div class="chips" id="wetterGefuehl" style="margin-top:8px"></div></div>
+<div class="block"><h3>Notiz (optional)</h3><textarea id="notiz" rows="2"></textarea></div>
+<div class="leiste"><button class="knopf zweit" id="abbrechen">Abbrechen</button><button class="knopf" id="speichern">Speichern</button></div>
+<div class="leiste"><button class="knopf zweit" id="loeschen" style="color:#c53030;border-color:#c53030">Eintrag löschen</button></div>
+</div>
+
+<script>
+const KEY='kopfweh-tagebuch-v1';
+const EFFEKTE=['Schwindel','Übelkeit','Lichtempfindlich','Geräuschempfindlich','Müdigkeit','Sehstörung'];
+const EREIGNISSE=['Schulaufgabe angekündigt','Schulaufgabe heute','Abfrage angekündigt','Abfrage heute','Schulstress','Streit/Stress','Wenig geschlafen','Sport','Viel Bildschirmzeit','Zu wenig getrunken'];
+const WETTERGEFUEHL=['Wetterumschwung','Drückend/schwül','Heiß','Kalt','Alles normal'];
+const STAERKEN=['leicht','mittel','stark'];
+let daten=JSON.parse(localStorage.getItem(KEY)||'{}');
+let ansicht=new Date();ansicht.setDate(1);
+let aktuellerTag=null;let arbeit=null;
+const $=id=>document.getElementById(id);
+function speichern(){localStorage.setItem(KEY,JSON.stringify(daten))}
+function iso(d){const m=String(d.getMonth()+1).padStart(2,'0'),t=String(d.getDate()).padStart(2,'0');return d.getFullYear()+'-'+m+'-'+t}
+
+function zeichneKalender(){
+  const j=ansicht.getFullYear(),m=ansicht.getMonth();
+  $('monatstitel').textContent=ansicht.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+  const erster=new Date(j,m,1);const versatz=(erster.getDay()+6)%7;
+  const tage=new Date(j,m+1,0).getDate();const heute=iso(new Date());
+  let h='';
+  for(let i=0;i<versatz;i++)h+='<div class="tag leer"></div>';
+  for(let t=1;t<=tage;t++){
+    const k=iso(new Date(j,m,t));const e=daten[k];
+    let kl='tag';if(k===heute)kl+=' heute';
+    if(e&&e.kopfweh)kl+=' '+(e.staerke||'leicht');
+    const punkt=e&&e.ereignisse&&e.ereignisse.length?'<span class="punkt"></span>':'';
+    h+='<button class="'+kl+'" data-k="'+k+'">'+t+punkt+'</button>';
+  }
+  $('raster').innerHTML=h;
+  document.querySelectorAll('.tag[data-k]').forEach(b=>b.onclick=()=>oeffne(b.dataset.k));
+}
+
+function chips(id,liste,gewaehlt,einzeln,nachAenderung){
+  const c=$(id);c.innerHTML='';
+  liste.forEach(txt=>{
+    const b=document.createElement('button');b.type='button';b.className='chip'+(gewaehlt.includes(txt)?' an':'');b.textContent=txt;
+    b.onclick=()=>{
+      const i=gewaehlt.indexOf(txt);
+      if(einzeln){gewaehlt.length=0;if(i<0)gewaehlt.push(txt)}
+      else{if(i<0)gewaehlt.push(txt);else gewaehlt.splice(i,1)}
+      chips(id,liste,gewaehlt,einzeln,nachAenderung);if(nachAenderung)nachAenderung();
+    };
+    c.appendChild(b);
+  });
+}
+
+function oeffne(k){
+  aktuellerTag=k;
+  const alt=daten[k];
+  arbeit=alt?JSON.parse(JSON.stringify(alt)):{kopfweh:false,staerke:'',effekte:[],ereignisse:[],wetterGefuehl:[],notiz:'',wetter:null};
+  $('maskeDatum').textContent=new Date(k+'T12:00:00').toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'});
+  $('notiz').value=arbeit.notiz||'';
+  zeichneMaske();
+  $('maske').classList.add('offen');
+}
+
+function zeichneMaske(){
+  const kw=[arbeit.kopfweh?'Kopfweh':'Kein Kopfweh'];
+  chips('kopfweh',['Kein Kopfweh','Kopfweh'],kw,true,()=>{arbeit.kopfweh=kw[0]==='Kopfweh';zeichneMaske()});
+  $('staerkeBlock').style.display=arbeit.kopfweh?'block':'none';
+  $('effekteBlock').style.display=arbeit.kopfweh?'block':'none';
+  const st=arbeit.staerke?[arbeit.staerke]:[];
+  chips('staerke',STAERKEN,st,true,()=>{arbeit.staerke=st[0]||''});
+  chips('effekte',EFFEKTE,arbeit.effekte,false);
+  chips('ereignisse',EREIGNISSE,arbeit.ereignisse,false);
+  chips('wetterGefuehl',WETTERGEFUEHL,arbeit.wetterGefuehl,false);
+  zeigeWetter();
+}
+
+function zeigeWetter(){
+  const w=arbeit.wetter;
+  $('wetterAnzeige').textContent=w?(w.temp+' °C, Luftdruck '+w.druck+' hPa, Änderung 24 h: '+(w.aenderung>0?'+':'')+w.aenderung+' hPa'):'Wird beim Speichern abgerufen (sobald Internet da ist).';
+}
+
+function position(){
+  return new Promise((ok,nein)=>{
+    const gespeichert=localStorage.getItem(KEY+'-pos');
+    if(!navigator.geolocation){gespeichert?ok(JSON.parse(gespeichert)):nein();return}
+    navigator.geolocation.getCurrentPosition(
+      p=>{const o={lat:p.coords.latitude,lon:p.coords.longitude};localStorage.setItem(KEY+'-pos',JSON.stringify(o));ok(o)},
+      ()=>gespeichert?ok(JSON.parse(gespeichert)):nein(),
+      {timeout:8000,maximumAge:86400000}
+    );
+  });
+}
+
+async function holeWetter(k){
+  const pos=await position();
+  const heute=iso(new Date());
+  const basis=k<heute?'https://archive-api.open-meteo.com/v1/archive':'https://api.open-meteo.com/v1/forecast';
+  const von=new Date(k+'T12:00:00');von.setDate(von.getDate()-1);
+  const url=basis+'?latitude='+pos.lat+'&longitude='+pos.lon+'&start_date='+iso(von)+'&end_date='+k+'&hourly=temperature_2m,surface_pressure&timezone=auto';
+  const r=await fetch(url);if(!r.ok)throw new Error('Wetter nicht erreichbar');
+  const j=await r.json();
+  const zeit=j.hourly.time,t=j.hourly.temperature_2m,p=j.hourly.surface_pressure;
+  const ziel=zeit.indexOf(k+'T12:00');const vor=ziel-24;
+  if(ziel<0||p[ziel]==null)throw new Error('Keine Wetterdaten');
+  return{temp:Math.round(t[ziel]*10)/10,druck:Math.round(p[ziel]),aenderung:vor>=0&&p[vor]!=null?Math.round(p[ziel]-p[vor]):0};
+}
+
+async function ergaenzeWetter(k){
+  const e=daten[k];if(!e||e.wetter)return;
+  try{e.wetter=await holeWetter(k);speichern();zeichneKalender()}catch(x){}
+}
+
+$('speichern').onclick=()=>{
+  arbeit.notiz=$('notiz').value.trim();
+  if(arbeit.kopfweh&&!arbeit.staerke)arbeit.staerke='leicht';
+  if(!arbeit.kopfweh){arbeit.staerke='';arbeit.effekte=[]}
+  daten[aktuellerTag]=arbeit;speichern();
+  $('maske').classList.remove('offen');zeichneKalender();
+  ergaenzeWetter(aktuellerTag);
+};
+$('abbrechen').onclick=()=>$('maske').classList.remove('offen');
+$('loeschen').onclick=()=>{
+  if(confirm('Eintrag wirklich löschen?')){delete daten[aktuellerTag];speichern();$('maske').classList.remove('offen');zeichneKalender()}
+};
+$('heuteKnopf').onclick=()=>oeffne(iso(new Date()));
+$('zurueck').onclick=()=>{ansicht.setMonth(ansicht.getMonth()-1);zeichneKalender()};
+$('vor').onclick=()=>{ansicht.setMonth(ansicht.getMonth()+1);zeichneKalender()};
+
+$('exportKnopf').onclick=async()=>{
+  const kopf=['Datum','Kopfweh','Staerke','Beschwerden','Ereignisse','Wetter-Gefuehl','Temperatur_C','Luftdruck_hPa','Druckaenderung_24h_hPa','Notiz'];
+  const q=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+  const zeilen=Object.keys(daten).sort().map(k=>{
+    const e=daten[k],w=e.wetter||{};
+    return[k,e.kopfweh?'ja':'nein',e.staerke,(e.effekte||[]).join('; '),(e.ereignisse||[]).join('; '),(e.wetterGefuehl||[]).join('; '),w.temp,w.druck,w.aenderung,e.notiz].map(q).join(';');
+  });
+  const csv='\ufeff'+kopf.join(';')+'\n'+zeilen.join('\n');
+  const datei=new File([csv],'kopfweh-tagebuch.csv',{type:'text/csv'});
+  if(navigator.canShare&&navigator.canShare({files:[datei]})){
+    try{await navigator.share({files:[datei],title:'Kopfweh-Tagebuch'});return}catch(x){}
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(datei);a.download='kopfweh-tagebuch.csv';a.click();
+};
+
+window.addEventListener('online',()=>Object.keys(daten).forEach(ergaenzeWetter));
+zeichneKalender();
+Object.keys(daten).forEach(ergaenzeWetter);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
